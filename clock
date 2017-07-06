@@ -1,0 +1,212 @@
+#!/bin/bash
+ 
+#       Спиджено из просторов инэта и отредачено by NiSa:)
+#       Отцентрировано с учетом отсутствия надписей
+ 
+## SYNOPSIS:
+#          ./clock.sh [delay | [-h | --help]]
+##                    in seconds, default delay is 1 second.
+##
+#
+# WARNING ! Run in pure BaSH, then mc & others.
+# FEATURES: In xterm mode after 'top' it needs to
+#           be 'clear' or 'tput clear' manually.
+#           May be some other programs need that.
+#
+# --
+##
+# * started(spizded) in May 2016
+#
+ 
+# featured echo, handles tty's existence, else kill itself
+Echo() {
+    if [ -w $OUT_TTY ]
+    then echo -en $@ >$OUT_TTY || kill $$
+    else kill $$
+    fi
+}
+ 
+# trap on many SIGnals, that may be send here to kill us ;-)
+clock_deinit() {
+    # we are need to reset origin tty
+    stty --file $OUT_TTY rows $ROWS
+    # finalize resetting tty, here's setting of scrolling
+    # region and making cursor position depend on that
+    Echo "\E[1;"$ROWS"r"
+    Echo "\E[?6h"
+#    tput clear >$OUT_TTY
+    Echo "Clock was successfully killed."
+ 
+    exit 0
+}
+ 
+clock_init() {
+    # global
+    OUT_TTY=$1
+    ROWS=$3
+    COLS=$(( $(($4))/2 - 15 ))
+ 
+    # below may be fanything
+    TOP[1]=""
+    TOP[2]=""
+    TOP[3]=""
+    TOP[4]=""
+    TOP[5]=""
+    TOP[6]=""
+    TOP[7]=""
+    TOP[8]=""
+    STRNUM=$((8 + 1))
+    i=1
+}
+ 
+# Arguments:
+# $1 - tty; $2 - delay, for slow connections; $3 - rows; $4 - cols;
+term_linux_clock_run() {
+    # common init
+    clock_init $@
+    # msg
+    Echo "\n
+BaSH Clock is active. Linux text mode.\n
+It automaticaly quits on _terminal_ exit.\n
+Or use 'kill $$'\n
+\n
+"
+    # inf loop
+    while [ 1 ]
+    do
+	#current row: Echo "\E7\E[1;32;40m\E[0G[$(date +%X)]<${TOP[$i]}>\E8"
+	#rows, cols-17, atomic execution
+        Echo "\E7\E[0;38;40m\E[$3;$(($4 - 28))H$(date +%c) ${TOP[$i]}\E8"
+	i=$((++i))
+	if [ $STRNUM -eq $i ]
+	then
+	    i=1
+	fi
+ 
+	sleep $2
+    done
+}
+ 
+# Arguments:
+# $1 - tty; $2 - delay, for slow connections; $3 - rows; $4 - cols;
+term_xterm_clock_run() {
+    # common init
+    clock_init $@
+ 
+    # handling of killing
+    trap "clock_deinit" 1 2 3 9 15
+ 
+    # msg
+#    Echo "\n
+#BaSH Clock is active. XTerm mode.\n
+#It automaticaly quits on _terminal_ exit.\n
+#Or use 'kill $$'\n
+#\n
+#"
+    # inf loop
+    while [ 1 ]
+    do
+	# handling of resizing of xterm
+	SIZE=($(stty --file $OUT_TTY size))
+	if [ $ROWS -ne $(( ${SIZE[0]} + 1)) ]
+	then
+	    ROWS=${SIZE[0]}
+	    # set tty
+	    stty --file $OUT_TTY rows $(( $ROWS - 1 ))
+	    # finalize tty
+	    Echo "\E[1;$(( $ROWS - 1 ))r"
+	fi
+ 
+	# atomic execution of output
+	D=$(date +"%A %d/%m/%Y %T")
+        Echo "\E7\E[0;38;40m\E[$ROWS;$(($COLS))H$D ${TOP[$i]}\E8"
+	i=$((++i))
+	if [ $STRNUM -eq $i ]
+	then
+	    i=1
+	fi
+ 
+	sleep $2
+    done
+}
+ 
+##** main() **##
+ 
+## Help checking
+if [ "$1" = -h -o "$1" = --help ]
+then
+    echo "##
+#       Spidzheno by NiSa
+## SYNOPSIS:
+#          clock.sh [delay | [-h | --help]]
+##                  in seconds, default delay is 1 second.
+##
+#
+# WARNING ! Run in pure BaSH, then mc & others.
+# FEATURES: In xterm mode after 'top' it needs to
+#           be 'clear' or 'tput clear' manually.
+#           May be some other programs need that.
+# Если хотим данное чудо по дэфолту,при открытии терминала,то делаем это:
+# echo "~/путь_к_нашему_скрипту" >> ~/.bashrc
+# --
+##"
+    exit 0
+fi
+ 
+## mc detection
+# find parent of our bash
+PPPID=($(ps -o pid,ppid,comm | grep bash))
+# if it is mc, then exit 1
+if [ "$(ps h -o comm ${PPPID[1]})" = "mc" ]
+then
+    echo -e "Do not run this under mc !\nRead --help."
+    exit 1
+fi
+ 
+ 
+# if not forked
+if [ -z $4 ]
+then 
+    # initial
+    OUT_TTY=$(tty)
+    SIZE=($(stty size))
+    ROWS=${SIZE[0]}
+    COLS=${SIZE[1]}
+ 
+    # delay is a digit, integer or real
+    if [ -z $1 ]
+    then DELAY=1
+    else
+        if [ "$(echo $1 | sed s/\[\.0123456789\]//g)" ] 
+        then
+            DELAY=1
+        else
+            DELAY=$1
+        fi
+    fi
+ 
+    if [ $TERM = linux ]
+    then
+	# fork
+	$0 $OUT_TTY $DELAY $ROWS $COLS 2>&1 1>/dev/null &
+    else
+	# setting up tty with rows--
+	stty rows $(( $ROWS - 1 ))
+	# finalize setting up tty, here's setting scrolling region
+	echo -en "\E[1;$(( $ROWS - 1 ))r"
+	tput clear
+	# fork
+	$0 $OUT_TTY $DELAY $ROWS $COLS 2>&1 1>/dev/null &
+#debug:	$0 $OUT_TTY $DELAY $ROWS $COLS
+    fi
+else 
+#do the job
+    if [ $TERM = linux ]
+    then
+	term_linux_clock_run $@
+    else
+	term_xterm_clock_run $@
+    fi
+fi
+# Если хотим данное чудо по дэфолту,при открытии терминала,то делаем это:
+# echo "~/путь_к_нашему_скрипту" >> ~/.bashrc
